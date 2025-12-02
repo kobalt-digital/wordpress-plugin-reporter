@@ -295,3 +295,16 @@ class PluginReporter
 }
 
 new PluginReporter();
+
+// ---- Plugin Update Checker ----
+require_once __DIR__ . '/vendor/plugin-update-checker/plugin-update-checker.php';
+
+use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
+
+$updateChecker = PucFactory::buildUpdateChecker(
+    'https://github.com/kobalt-digital/wordpress-plugin-reporter',
+    __FILE__,
+    'plugin-reporter'
+);
+
+$updateChecker->setBranch('main');
