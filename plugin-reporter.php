@@ -297,7 +297,7 @@ class PluginReporter
 new PluginReporter();
 
 // ---- Plugin Update Checker ----
-require_once __DIR__ . '/vendor/plugin-update-checker/plugin-update-checker.php';
+require_once __DIR__ . '/vendor/autoload.php';
 
 use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
 
