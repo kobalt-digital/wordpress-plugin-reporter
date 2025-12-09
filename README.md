@@ -30,7 +30,7 @@ Access the settings page via:
 ### Settings
 
 - **Endpoint URL**: The API endpoint where plugin information will be sent (default: `https://plugin-reporter.kobaltdigital.nl/api/data`)
-- **Secret Key**: The secret key used for Bearer token authentication
+- **Secret Key**: The secret key used for Bearer token authentication (required)
 
 ## Usage
 

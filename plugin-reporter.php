@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Plugin Reporter
  * Description: Sends plugin information to mijn.kobaltdigital.nl once a day and via a secure REST endpoint.
- * Version: 1.0.2
+ * Version: 1.0.3
  * Author: Arne van Hoorn
  */
 
@@ -11,8 +11,6 @@ if (!defined('ABSPATH')) exit;
 class PluginReporter
 {
     private $default_endpoint = 'https://plugin-reporter.kobaltdigital.nl/api/data';
-
-    private $default_secret = '';
 
     public function __construct() {
         add_action('plugin_reporter_send', [$this, 'send_plugin_information']);
@@ -54,8 +52,7 @@ class PluginReporter
     }
 
     private function get_secret() {
-        $secret = get_option('plugin_reporter_secret', '');
-        return !empty($secret) ? $secret : $this->default_secret;
+        return get_option('plugin_reporter_secret', '');
     }
 
     public function register_settings() {
@@ -67,7 +64,6 @@ class PluginReporter
         register_setting('plugin_reporter_settings', 'plugin_reporter_secret', [
             'type' => 'string',
             'sanitize_callback' => 'sanitize_text_field',
-            'default' => $this->default_secret,
         ]);
     }
 
@@ -87,15 +83,7 @@ class PluginReporter
         return $links;
     }
 
-    public function handle_test_post() {
-        if (!isset($_POST['plugin_reporter_test']) || !check_admin_referer('plugin_reporter_test', 'plugin_reporter_test_nonce')) {
-            return;
-        }
-
-        if (!current_user_can('manage_options')) {
-            wp_die('Unauthorized');
-        }
-
+    private function collect_plugin_payload() {
         require_once ABSPATH . 'wp-admin/includes/plugin.php';
 
         $plugins = get_plugins();
@@ -118,10 +106,24 @@ class PluginReporter
             ];
         }
 
-        $payload = [
+        return [
             'site_url' => site_url(),
+            'wordpress_version' => get_bloginfo('version'),
             'plugins'  => $data,
         ];
+    }
+
+    public function handle_test_post() {
+        if (!isset($_POST['plugin_reporter_test']) || !check_admin_referer('plugin_reporter_test', 'plugin_reporter_test_nonce')) {
+            return;
+        }
+
+        if (!current_user_can('manage_options')) {
+            wp_die('Unauthorized');
+        }
+
+        $payload = $this->collect_plugin_payload();
+        $data = $payload['plugins'];
 
         $response = wp_remote_post($this->get_endpoint(), [
             'method'  => 'POST',
@@ -139,36 +141,46 @@ class PluginReporter
         $body = wp_remote_retrieve_body($response);
         $error = is_wp_error($response) ? $response->get_error_message() : null;
 
+        $message = '';
+        $type = 'error';
+
         if ($error) {
-            add_settings_error(
-                'plugin_reporter_test',
-                'plugin_reporter_test_error',
-                'Test failed: ' . $error,
-                'error'
-            );
+            $message = 'Test failed: ' . $error;
         } elseif ($status_code >= 200 && $status_code < 300) {
-            add_settings_error(
-                'plugin_reporter_test',
-                'plugin_reporter_test_success',
-                'Test successful! Response code: ' . $status_code . '. Sent ' . count($data) . ' plugins.',
-                'success'
-            );
+            $message = 'Test successful! Response code: ' . $status_code . '. Sent ' . count($data) . ' plugins.';
+            $type = 'success';
         } else {
-            add_settings_error(
-                'plugin_reporter_test',
-                'plugin_reporter_test_error',
-                'Test failed with status code: ' . $status_code . '. Response: ' . substr($body, 0, 200),
-                'error'
-            );
+            $message = 'Test failed with status code: ' . $status_code . '. Response: ' . substr($body, 0, 200);
         }
+
+        // Store message in transient for display after redirect
+        set_transient('plugin_reporter_test_message', [
+            'message' => $message,
+            'type' => $type
+        ], 30);
+
+        // Redirect to prevent duplicate processing
+        wp_safe_redirect(add_query_arg('test-complete', 'true', admin_url('options-general.php?page=plugin-reporter')));
+        exit;
     }
 
     public function render_settings_page() {
+        // Display test message if available
+        $test_message = get_transient('plugin_reporter_test_message');
+        if ($test_message) {
+            delete_transient('plugin_reporter_test_message');
+            $notice_class = $test_message['type'] === 'success' ? 'notice-success' : 'notice-error';
+            ?>
+            <div class="notice <?php echo esc_attr($notice_class); ?> is-dismissible">
+                <p><?php echo esc_html($test_message['message']); ?></p>
+            </div>
+            <?php
+        }
+
+        settings_errors('plugin_reporter_test');
         ?>
         <div class="wrap">
             <h1>Plugin Reporter Settings</h1>
-
-            <?php settings_errors('plugin_reporter_test'); ?>
 
             <form method="post" action="options.php">
                 <?php settings_fields('plugin_reporter_settings'); ?>
@@ -191,16 +203,16 @@ class PluginReporter
                     </tr>
                     <tr>
                         <th scope="row">
-                            <label for="plugin_reporter_secret">Secret Key</label>
+                            <label for="plugin_reporter_secret">Secret Key <span style="color: red;">*</span></label>
                         </th>
                         <td>
                             <input type="password"
                                    id="plugin_reporter_secret"
                                    name="plugin_reporter_secret"
-                                   value="<?php echo esc_attr(get_option('plugin_reporter_secret', $this->default_secret)); ?>"
+                                   value="<?php echo esc_attr(get_option('plugin_reporter_secret', '')); ?>"
                                    class="regular-text"
-                                   placeholder="<?php echo esc_attr($this->default_secret); ?>" />
-                            <p class="description">The secret key used for authentication. Leave empty to use the default.</p>
+                                   required />
+                            <p class="description">The secret key used for authentication. This field is required.</p>
                         </td>
                     </tr>
                 </table>
@@ -247,32 +259,8 @@ class PluginReporter
     }
 
     public function send_plugin_information() {
-        require_once ABSPATH . 'wp-admin/includes/plugin.php';
-
-        $plugins = get_plugins();
-        $active  = get_option('active_plugins', []);
-        $updates = get_site_transient('update_plugins');
-
-        $data = [];
-
-        foreach ($plugins as $plugin_file => $plugin_data) {
-            $slug = dirname($plugin_file);
-
-            $data[] = [
-                'slug'    => $slug,
-                'title'   => $plugin_data['Name'],
-                'version' => $plugin_data['Version'],
-                'status'  => in_array($plugin_file, $active) ? 'active' : 'inactive',
-                'update'  => isset($updates->response[$plugin_file])
-                    ? $updates->response[$plugin_file]->new_version
-                    : false,
-            ];
-        }
-
-        $payload = [
-            'site_url' => site_url(),
-            'plugins'  => $data,
-        ];
+        $payload = $this->collect_plugin_payload();
+        $data = $payload['plugins'];
 
         // Send to external endpoint
         wp_remote_post($this->get_endpoint(), [
