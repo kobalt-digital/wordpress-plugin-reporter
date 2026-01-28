@@ -2,60 +2,82 @@
 /**
  * Plugin Name: Plugin Reporter
  * Description: Sends plugin information to mijn.kobaltdigital.nl once a day and via a secure REST endpoint.
- * Version: 1.0.3
+ * Version: 1.0.4
  * Author: Arne van Hoorn
  */
 
-if (!defined('ABSPATH')) exit;
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
+
+// Register activation and deactivation hooks before class instantiation
+register_activation_hook(__FILE__, 'plugin_reporter_activate');
+register_deactivation_hook(__FILE__, 'plugin_reporter_deactivate');
+
+function plugin_reporter_activate() {
+    if (!wp_next_scheduled('plugin_reporter_send')) {
+        wp_schedule_event(time(), 'daily', 'plugin_reporter_send');
+    }
+}
+
+function plugin_reporter_deactivate() {
+    wp_clear_scheduled_hook('plugin_reporter_send');
+}
 
 class PluginReporter
 {
     private $default_endpoint = 'https://plugin-reporter.kobaltdigital.nl/api/data';
 
-    public function __construct() {
-        add_action('plugin_reporter_send', [$this, 'send_plugin_information']);
-        register_activation_hook(__FILE__, [$this, 'schedule']);
-        register_deactivation_hook(__FILE__, [$this, 'unschedule']);
+    public function __construct()
+    {
+        add_action('plugin_reporter_send', [$this, 'sendPluginInformation']);
 
         // Admin settings page
-        add_action('admin_menu', [$this, 'add_admin_menu']);
-        add_action('admin_init', [$this, 'register_settings']);
-        add_action('admin_init', [$this, 'handle_test_post']);
-        add_filter('plugin_action_links_' . plugin_basename(__FILE__), [$this, 'add_settings_link']);
+        add_action('admin_menu', [$this, 'addAdminMenu']);
+        add_action('admin_init', [$this, 'registerSettings']);
+        add_action('admin_init', [$this, 'handleTestPost']);
+        add_filter('plugin_action_links_' . plugin_basename(__FILE__), [$this, 'addSettingsLink']);
 
         // Secure REST endpoint
         add_action('rest_api_init', function () {
             register_rest_route('plugin-reporter/v1', '/send', [
                 'methods'  => 'POST',
-                'callback' => [$this, 'send_plugin_information'],
+                'callback' => [$this, 'sendPluginInformation'],
                 'permission_callback' => function ($req) {
                     $key = $req->get_header('X-Reporter-Key');
-                    return $key && hash_equals($this->get_secret(), $key);
+                    return $key && hash_equals($this->getSecret(), $key);
                 }
             ]);
         });
     }
 
-    public function schedule() {
+    public function schedule()
+    {
         if (!wp_next_scheduled('plugin_reporter_send')) {
             wp_schedule_event(time(), 'daily', 'plugin_reporter_send');
         }
     }
 
-    public function unschedule() {
+    public function unschedule()
+    {
         wp_clear_scheduled_hook('plugin_reporter_send');
     }
 
-    private function get_endpoint() {
+    private function getEndpoint()
+    {
         $endpoint = get_option('plugin_reporter_endpoint', '');
         return !empty($endpoint) ? $endpoint : $this->default_endpoint;
     }
 
-    private function get_secret() {
+    private function getSecret()
+    {
         return get_option('plugin_reporter_secret', '');
     }
 
-    public function register_settings() {
+    public function registerSettings()
+    {
         register_setting('plugin_reporter_settings', 'plugin_reporter_endpoint', [
             'type' => 'string',
             'sanitize_callback' => 'esc_url_raw',
@@ -67,23 +89,26 @@ class PluginReporter
         ]);
     }
 
-    public function add_admin_menu() {
+    public function addAdminMenu()
+    {
         add_options_page(
             'Plugin Reporter Settings',
             'Plugin Reporter',
             'manage_options',
             'plugin-reporter',
-            [$this, 'render_settings_page']
+            [$this, 'renderSettingsPage']
         );
     }
 
-    public function add_settings_link($links) {
+    public function addSettingsLink($links)
+    {
         $settings_link = '<a href="' . admin_url('options-general.php?page=plugin-reporter') . '">' . __('Settings') . '</a>';
         array_unshift($links, $settings_link);
         return $links;
     }
 
-    private function collect_plugin_payload() {
+    private function collectPluginPayload()
+    {
         require_once ABSPATH . 'wp-admin/includes/plugin.php';
 
         $plugins = get_plugins();
@@ -113,7 +138,8 @@ class PluginReporter
         ];
     }
 
-    public function handle_test_post() {
+    public function handleTestPost()
+    {
         if (!isset($_POST['plugin_reporter_test']) || !check_admin_referer('plugin_reporter_test', 'plugin_reporter_test_nonce')) {
             return;
         }
@@ -122,15 +148,15 @@ class PluginReporter
             wp_die('Unauthorized');
         }
 
-        $payload = $this->collect_plugin_payload();
+        $payload = $this->collectPluginPayload();
         $data = $payload['plugins'];
 
-        $response = wp_remote_post($this->get_endpoint(), [
+        $response = wp_remote_post($this->getEndpoint(), [
             'method'  => 'POST',
             'headers' => [
                 'Content-Type'  => 'application/json',
                 'Accept'        => 'application/json',
-                'Authorization' => 'Bearer ' . $this->get_secret(),
+                'Authorization' => 'Bearer ' . $this->getSecret(),
             ],
             'body'    => wp_json_encode($payload),
             'timeout' => 20,
@@ -164,7 +190,8 @@ class PluginReporter
         exit;
     }
 
-    public function render_settings_page() {
+    public function renderSettingsPage()
+    {
         // Display test message if available
         $test_message = get_transient('plugin_reporter_test_message');
         if ($test_message) {
@@ -193,12 +220,17 @@ class PluginReporter
                         </th>
                         <td>
                             <input type="url"
-                                   id="plugin_reporter_endpoint"
-                                   name="plugin_reporter_endpoint"
-                                   value="<?php echo esc_attr(get_option('plugin_reporter_endpoint', $this->default_endpoint)); ?>"
-                                   class="regular-text"
-                                   placeholder="<?php echo esc_attr($this->default_endpoint); ?>" />
-                            <p class="description">The API endpoint where plugin information will be sent. Leave empty to use the default.</p>
+                                    id="plugin_reporter_endpoint"
+                                    name="plugin_reporter_endpoint"
+                                    value="<?php echo esc_attr(
+                                        get_option('plugin_reporter_endpoint', $this->default_endpoint)
+                                    ); ?>"
+                                    class="regular-text"
+                                    placeholder="<?php echo esc_attr($this->default_endpoint); ?>"
+                                    style="width: 100%;" />
+                            <p class="description">
+                                The API endpoint where plugin information will be sent.
+                                Leave empty to use the default.</p>
                         </td>
                     </tr>
                     <tr>
@@ -227,7 +259,11 @@ class PluginReporter
                 <form method="post" action="">
                     <?php wp_nonce_field('plugin_reporter_test', 'plugin_reporter_test_nonce'); ?>
                     <p>
-                        <input type="submit" name="plugin_reporter_test" class="button button-primary" value="Run Test Post" />
+                        <input
+                            type="submit"
+                            name="plugin_reporter_test"
+                            class="button button-primary"
+                            value="Run Test Post" />
                     </p>
                 </form>
             </div>
@@ -237,7 +273,7 @@ class PluginReporter
                 <table class="form-table">
                     <tr>
                         <th scope="row">Current Endpoint</th>
-                        <td><code><?php echo esc_html($this->get_endpoint()); ?></code></td>
+                        <td><code><?php echo esc_html($this->getEndpoint()); ?></code></td>
                     </tr>
                     <tr>
                         <th scope="row">Next Scheduled Run</th>
@@ -245,7 +281,10 @@ class PluginReporter
                             <?php
                             $next_run = wp_next_scheduled('plugin_reporter_send');
                             if ($next_run) {
-                                echo esc_html(date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $next_run));
+                                echo esc_html(date_i18n(
+                                    get_option('date_format') . ' ' . get_option('time_format'),
+                                    $next_run
+                                ));
                             } else {
                                 echo '<em>Not scheduled</em>';
                             }
@@ -258,16 +297,17 @@ class PluginReporter
         <?php
     }
 
-    public function send_plugin_information() {
-        $payload = $this->collect_plugin_payload();
+    public function sendPluginInformation()
+    {
+        $payload = $this->collectPluginPayload();
         $data = $payload['plugins'];
 
         // Send to external endpoint
-        wp_remote_post($this->get_endpoint(), [
+        wp_remote_post($this->getEndpoint(), [
             'method'  => 'POST',
             'headers' => [
                 'Content-Type'  => 'application/json',
-                'Authorization' => 'Bearer ' . $this->get_secret(),
+                'Authorization' => 'Bearer ' . $this->getSecret(),
             ],
             'body'    => wp_json_encode($payload),
             'timeout' => 20,
@@ -287,7 +327,7 @@ new PluginReporter();
 // ---- Plugin Update Checker ----
 require_once __DIR__ . '/vendor/autoload.php';
 
-use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
+
 
 $updateChecker = PucFactory::buildUpdateChecker(
     'https://github.com/kobalt-digital/wordpress-plugin-reporter',
