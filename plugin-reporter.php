@@ -42,13 +42,21 @@ class PluginReporter
 
         // Secure REST endpoint
         add_action('rest_api_init', function () {
+            $permission = function ($req) {
+                $key = $req->get_header('X-Reporter-Key');
+                return $key && hash_equals($this->getSecret(), $key);
+            };
+
             register_rest_route('plugin-reporter/v1', '/send', [
                 'methods'  => 'POST',
                 'callback' => [$this, 'sendPluginInformation'],
-                'permission_callback' => function ($req) {
-                    $key = $req->get_header('X-Reporter-Key');
-                    return $key && hash_equals($this->getSecret(), $key);
-                }
+                'permission_callback' => $permission,
+            ]);
+
+            register_rest_route('plugin-reporter/v1', '/status', [
+                'methods'  => 'GET',
+                'callback' => [$this, 'statusCheck'],
+                'permission_callback' => $permission,
             ]);
         });
     }
@@ -276,6 +284,14 @@ class PluginReporter
                         <td><code><?php echo esc_html($this->getEndpoint()); ?></code></td>
                     </tr>
                     <tr>
+                        <th scope="row">Status check URL</th>
+                        <td>
+                            <code><?php echo esc_html(rest_url('plugin-reporter/v1/status')); ?></code>
+                            <p class="description">
+                                Call this URL with GET and <code>X-Reporter-Key</code> header to verify the plugin is active.</p>
+                        </td>
+                    </tr>
+                    <tr>
                         <th scope="row">Next Scheduled Run</th>
                         <td>
                             <?php
@@ -318,6 +334,23 @@ class PluginReporter
             'status'  => 'ok',
             'sent_at' => current_time('mysql'),
             'plugin_count' => count($data)
+        ];
+    }
+
+    /**
+     * REST callback for /status: lets the external endpoint verify this plugin is still active.
+     */
+    public function statusCheck()
+    {
+        require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        $plugin_data = get_plugin_data(__FILE__, false, false);
+        return [
+            'active'  => true,
+            'plugin'  => 'plugin-reporter',
+            'name'    => $plugin_data['Name'] ?? 'Plugin Reporter',
+            'version' => $plugin_data['Version'] ?? '',
+            'site_url' => site_url(),
+            'checked_at' => current_time('mysql'),
         ];
     }
 }
