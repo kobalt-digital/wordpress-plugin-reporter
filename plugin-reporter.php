@@ -36,9 +36,12 @@ class PluginReporter
 
         // Admin settings page
         add_action('admin_menu', [$this, 'addAdminMenu']);
+        add_action('admin_menu', [$this, 'maybeHideAdminMenus'], 999);
         add_action('admin_init', [$this, 'registerSettings']);
         add_action('admin_init', [$this, 'handleTestPost']);
+        add_action('admin_init', [$this, 'maybeBlockAdminPages']);
         add_filter('plugin_action_links_' . plugin_basename(__FILE__), [$this, 'addSettingsLink']);
+        add_filter('acf/settings/show_admin', [$this, 'maybeHideAcfAdmin']);
 
         // Secure REST endpoint
         add_action('rest_api_init', function () {
@@ -94,6 +97,21 @@ class PluginReporter
         register_setting('plugin_reporter_settings', 'plugin_reporter_secret', [
             'type' => 'string',
             'sanitize_callback' => 'sanitize_text_field',
+        ]);
+        register_setting('plugin_reporter_settings', 'plugin_reporter_allowed_domains', [
+            'type'              => 'string',
+            'sanitize_callback' => 'sanitize_textarea_field',
+            'default'           => 'kobaltdigital.nl,alkmaarsch.nl',
+        ]);
+        register_setting('plugin_reporter_settings', 'plugin_reporter_hide_plugins', [
+            'type'              => 'integer',
+            'sanitize_callback' => 'absint',
+            'default'           => 0,
+        ]);
+        register_setting('plugin_reporter_settings', 'plugin_reporter_hide_acf', [
+            'type'              => 'integer',
+            'sanitize_callback' => 'absint',
+            'default'           => 0,
         ]);
     }
 
@@ -257,6 +275,54 @@ class PluginReporter
                             <p class="description">The secret key used for authentication. This field is required.</p>
                         </td>
                     </tr>
+                    <tr>
+                        <th scope="row" colspan="2">
+                            <h2 style="margin: 0;">Access Control</h2>
+                        </th>
+                    </tr>
+                    <tr>
+                        <th scope="row">
+                            <label for="plugin_reporter_allowed_domains">Allowed Email Domains</label>
+                        </th>
+                        <td>
+                            <input type="text"
+                                   id="plugin_reporter_allowed_domains"
+                                   name="plugin_reporter_allowed_domains"
+                                   value="<?php echo esc_attr(get_option('plugin_reporter_allowed_domains', 'kobaltdigital.nl,alkmaarsch.nl')); ?>"
+                                   class="regular-text"
+                                   style="width: 100%;" />
+                            <p class="description">
+                                Comma-separated domain names without @,
+                                e.g. <code>kobaltdigital.nl,alkmaarsch.nl</code>.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Hide Plugins menu</th>
+                        <td>
+                            <label>
+                                <input type="checkbox"
+                                       name="plugin_reporter_hide_plugins"
+                                       value="1"
+                                       <?php checked(1, get_option('plugin_reporter_hide_plugins', 0)); ?> />
+                                Hide the Plugins menu for users outside the allowed domains.
+                            </label>
+                        </td>
+                    </tr>
+                    <?php if (class_exists('ACF') || function_exists('acf_get_settings')) : ?>
+                    <tr>
+                        <th scope="row">Hide ACF Field Groups menu</th>
+                        <td>
+                            <label>
+                                <input type="checkbox"
+                                       name="plugin_reporter_hide_acf"
+                                       value="1"
+                                       <?php checked(1, get_option('plugin_reporter_hide_acf', 0)); ?> />
+                                Hide ACF Field Groups menu for users outside the allowed domains.
+                            </label>
+                        </td>
+                    </tr>
+                    <?php endif; ?>
                 </table>
 
                 <?php submit_button('Save Settings'); ?>
@@ -313,6 +379,64 @@ class PluginReporter
             </div>
         </div>
         <?php
+    }
+
+    private function isCurrentUserAllowed(): bool
+    {
+        $user = wp_get_current_user();
+        if (empty($user->user_email)) {
+            return false;
+        }
+        $raw     = get_option('plugin_reporter_allowed_domains', 'kobaltdigital.nl,alkmaarsch.nl');
+        $domains = array_filter(array_map('trim', explode(',', $raw)));
+        foreach ($domains as $domain) {
+            $match = '@' . ltrim($domain, '@');
+            if (substr($user->user_email, -strlen($match)) === $match) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public function maybeBlockAdminPages(): void
+    {
+        if ($this->isCurrentUserAllowed()) {
+            return;
+        }
+
+        global $pagenow;
+
+        if (get_option('plugin_reporter_hide_plugins', 0) && $pagenow === 'plugins.php') {
+            wp_safe_redirect(admin_url());
+            exit;
+        }
+
+        if (get_option('plugin_reporter_hide_acf', 0)) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+            $post_type = isset($_GET['post_type']) ? sanitize_key($_GET['post_type']) : '';
+            if (
+                ($pagenow === 'edit.php' || $pagenow === 'post-new.php') &&
+                $post_type === 'acf-field-group'
+            ) {
+                wp_safe_redirect(admin_url());
+                exit;
+            }
+        }
+    }
+
+    public function maybeHideAdminMenus(): void
+    {
+        if (get_option('plugin_reporter_hide_plugins', 0) && !$this->isCurrentUserAllowed()) {
+            remove_menu_page('plugins.php');
+        }
+    }
+
+    public function maybeHideAcfAdmin(bool $show): bool
+    {
+        if (get_option('plugin_reporter_hide_acf', 0) && !$this->isCurrentUserAllowed()) {
+            return false;
+        }
+        return $show;
     }
 
     public function sendPluginInformation()
