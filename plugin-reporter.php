@@ -40,6 +40,9 @@ class PluginReporter
         add_action('admin_init', [$this, 'registerSettings']);
         add_action('admin_init', [$this, 'handleTestPost']);
         add_action('admin_init', [$this, 'maybeBlockAdminPages']);
+        add_action('admin_init', [$this, 'registerColorSchemes']);
+        add_filter('get_user_option_admin_color', [$this, 'enforceAdminColorScheme']);
+        add_action('login_enqueue_scripts', [$this, 'enqueueLoginStyles']);
         add_filter('plugin_action_links_' . plugin_basename(__FILE__), [$this, 'addSettingsLink']);
         add_filter('acf/settings/show_admin', [$this, 'maybeHideAcfAdmin']);
 
@@ -112,6 +115,11 @@ class PluginReporter
             'type'              => 'integer',
             'sanitize_callback' => 'absint',
             'default'           => 0,
+        ]);
+        register_setting('plugin_reporter_settings', 'plugin_reporter_theme', [
+            'type'              => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default'           => 'default',
         ]);
     }
 
@@ -276,6 +284,19 @@ class PluginReporter
                         </td>
                     </tr>
                     <tr>
+                        <th scope="row">
+                            <label for="plugin_reporter_theme">Backend Theme</label>
+                        </th>
+                        <td>
+                            <select id="plugin_reporter_theme" name="plugin_reporter_theme">
+                                <option value="default" <?php selected('default', get_option('plugin_reporter_theme', 'default')); ?>>Default</option>
+                                <option value="kobalt"  <?php selected('kobalt',  get_option('plugin_reporter_theme', 'default')); ?>>Kobalt</option>
+                                <option value="alkmaarsch" <?php selected('alkmaarsch', get_option('plugin_reporter_theme', 'default')); ?>>Alkmaarsch</option>
+                            </select>
+                            <p class="description">Applies the selected color scheme to all admin users site-wide.</p>
+                        </td>
+                    </tr>
+                    <tr>
                         <th scope="row" colspan="2">
                             <h2 style="margin: 0;">Access Control</h2>
                         </th>
@@ -437,6 +458,46 @@ class PluginReporter
             return false;
         }
         return $show;
+    }
+
+    public function enqueueLoginStyles(): void
+    {
+        $theme = get_option('plugin_reporter_theme', 'default');
+        if ($theme === 'default') {
+            return;
+        }
+        $css_file = $theme . '-login.css';
+        wp_enqueue_style(
+            'plugin-reporter-login-' . $theme,
+            plugin_dir_url(__FILE__) . 'assets/css/' . $css_file,
+            [],
+            '1.0'
+        );
+    }
+
+    public function registerColorSchemes(): void
+    {
+        wp_admin_css_color(
+            'kobalt',
+            __('Kobalt'),
+            plugin_dir_url(__FILE__) . 'assets/css/kobalt-color-scheme.css',
+            ['#0100FF', '#051432', '#030b1b', '#f24725']
+        );
+        wp_admin_css_color(
+            'alkmaarsch',
+            __('Alkmaarsch'),
+            plugin_dir_url(__FILE__) . 'assets/css/alkmaarsch-color-scheme.css',
+            ['#1C1C1C', '#2E2E2E', '#111111', '#0100FF']
+        );
+    }
+
+    public function enforceAdminColorScheme(string $color): string
+    {
+        $theme = get_option('plugin_reporter_theme', 'default');
+        if ($theme !== 'default') {
+            return $theme;
+        }
+        return $color;
     }
 
     public function sendPluginInformation()

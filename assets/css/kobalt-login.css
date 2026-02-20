@@ -1,0 +1,59 @@
+body {
+  background: #051432; }
+
+a {
+  color: white; }
+
+#login #login_error a {
+  color: #f24725 !important; }
+
+#login h1 a {
+  background-image: url(../images/logo-kobalt.svg);
+  width: 100%;
+  background-size: auto;
+  height: 150px; }
+
+#login #backtoblog a:hover,
+#login #nav a:hover {
+  color: #051432; }
+
+#login .message {
+  border-color: #f24725; }
+
+#login .message a {
+  color: #f24725; }
+
+p#nav a,
+p#backtoblog a {
+  color: #fff !important; }
+
+input[type=checkbox]:focus,
+input[type=color]:focus,
+input[type=date]:focus,
+input[type=datetime-local]:focus,
+input[type=datetime]:focus,
+input[type=email]:focus,
+input[type=month]:focus,
+input[type=number]:focus,
+input[type=password]:focus,
+input[type=radio]:focus,
+input[type=search]:focus,
+input[type=tel]:focus,
+input[type=text]:focus,
+input[type=time]:focus,
+input[type=url]:focus,
+input[type=week]:focus,
+select:focus,
+textarea:focus {
+  border-color: #051432;
+  box-shadow: 0 0 5px -1px #051432; }
+
+.language-switcher label .dashicons {
+  color: #fff; }
+
+.login_footer {
+  padding-top: 20px;
+  text-align: center;
+  color: white; }
+  .login_footer a:hover {
+    color: #f24725; }

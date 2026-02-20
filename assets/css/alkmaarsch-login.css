@@ -1,0 +1,59 @@
+body {
+  background: #1C1C1C; }
+
+a {
+  color: white; }
+
+#login #login_error a {
+  color: #0100FF !important; }
+
+#login h1 a {
+  background-image: url(../images/logo-alkmaarsch.svg);
+  width: 100%;
+  background-size: auto;
+  height: 40px; }
+
+#login #backtoblog a:hover,
+#login #nav a:hover {
+  color: #1C1C1C; }
+
+#login .message {
+  border-color: #0100FF; }
+
+#login .message a {
+  color: #0100FF; }
+
+p#nav a,
+p#backtoblog a {
+  color: #fff !important; }
+
+input[type=checkbox]:focus,
+input[type=color]:focus,
+input[type=date]:focus,
+input[type=datetime-local]:focus,
+input[type=datetime]:focus,
+input[type=email]:focus,
+input[type=month]:focus,
+input[type=number]:focus,
+input[type=password]:focus,
+input[type=radio]:focus,
+input[type=search]:focus,
+input[type=tel]:focus,
+input[type=text]:focus,
+input[type=time]:focus,
+input[type=url]:focus,
+input[type=week]:focus,
+select:focus,
+textarea:focus {
+  border-color: #1C1C1C;
+  box-shadow: 0 0 5px -1px #1C1C1C; }
+
+.language-switcher label .dashicons {
+  color: #fff; }
+
+.login_footer {
+  padding-top: 20px;
+  text-align: center;
+  color: white; }
+  .login_footer a:hover {
+    color: #0100FF; }
