@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Plugin Reporter
  * Description: Sends plugin information to mijn.kobaltdigital.nl once a day and via a secure REST endpoint.
- * Version: 1.0.5
+ * Version: 1.0.6
  * Author: Arne van Hoorn
  */
 
@@ -134,7 +134,7 @@ class PluginReporter
                 'title'       => $plugin_data['Name'],
                 'version'     => $plugin_data['Version'],
                 'status'      => in_array($plugin_file, $active) ? 'active' : 'inactive',
-                'auto_update' => in_array($plugin_file, $auto_update_plugins),
+                'auto_update' => in_array($plugin_file, $auto_update_plugins) ? 1 : 0,
                 'update'      => isset($updates->response[$plugin_file])
                     ? $updates->response[$plugin_file]->new_version
                     : false,
