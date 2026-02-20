@@ -170,6 +170,7 @@ class PluginReporter
         return [
             'site_url' => site_url(),
             'wordpress_version' => get_bloginfo('version'),
+            'php_version'       => PHP_VERSION,
             'plugins'  => $data,
         ];
     }
