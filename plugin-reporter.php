@@ -102,24 +102,24 @@ class PluginReporter
             'sanitize_callback' => 'sanitize_text_field',
         ]);
         register_setting('plugin_reporter_settings', 'plugin_reporter_allowed_domains', [
-            'type'              => 'string',
+            'type' => 'string',
             'sanitize_callback' => 'sanitize_textarea_field',
-            'default'           => 'kobaltdigital.nl,alkmaarsch.nl',
+            'default' => 'kobaltdigital.nl,alkmaarsch.nl',
         ]);
         register_setting('plugin_reporter_settings', 'plugin_reporter_hide_plugins', [
-            'type'              => 'integer',
+            'type' => 'integer',
             'sanitize_callback' => 'absint',
-            'default'           => 0,
+            'default' => 0,
         ]);
         register_setting('plugin_reporter_settings', 'plugin_reporter_hide_acf', [
-            'type'              => 'integer',
+            'type' => 'integer',
             'sanitize_callback' => 'absint',
-            'default'           => 0,
+            'default' => 0,
         ]);
         register_setting('plugin_reporter_settings', 'plugin_reporter_theme', [
-            'type'              => 'string',
+            'type' => 'string',
             'sanitize_callback' => 'sanitize_text_field',
-            'default'           => 'default',
+            'default' => 'default',
         ]);
     }
 
@@ -156,12 +156,12 @@ class PluginReporter
             $slug = dirname($plugin_file);
 
             $data[] = [
-                'slug'        => $slug,
-                'title'       => $plugin_data['Name'],
-                'version'     => $plugin_data['Version'],
-                'status'      => in_array($plugin_file, $active) ? 'active' : 'inactive',
+                'slug' => $slug,
+                'title' => $plugin_data['Name'],
+                'version' => $plugin_data['Version'],
+                'status' => in_array($plugin_file, $active) ? 'active' : 'inactive',
                 'auto_update' => in_array($plugin_file, $auto_update_plugins) ? 1 : 0,
-                'update'      => isset($updates->response[$plugin_file])
+                'update' => isset($updates->response[$plugin_file])
                     ? $updates->response[$plugin_file]->new_version
                     : false,
             ];
@@ -170,8 +170,8 @@ class PluginReporter
         return [
             'site_url' => site_url(),
             'wordpress_version' => get_bloginfo('version'),
-            'php_version'       => PHP_VERSION,
-            'plugins'  => $data,
+            'php_version' => PHP_VERSION,
+            'plugins' => $data,
         ];
     }
 
@@ -191,11 +191,11 @@ class PluginReporter
         $response = wp_remote_post($this->getEndpoint(), [
             'method'  => 'POST',
             'headers' => [
-                'Content-Type'  => 'application/json',
-                'Accept'        => 'application/json',
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json',
                 'Authorization' => 'Bearer ' . $this->getSecret(),
             ],
-            'body'    => wp_json_encode($payload),
+            'body' => wp_json_encode($payload),
             'timeout' => 20,
             'sslverify' => false,
         ]);
