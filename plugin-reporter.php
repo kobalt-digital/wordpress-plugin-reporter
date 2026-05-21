@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Plugin Reporter
  * Description: Sends plugin information to mijn.kobaltdigital.nl once a day and via a secure REST endpoint.
- * Version: 1.0.6
+ * Version: 1.0.7
  * Author: Arne van Hoorn
  */
 
@@ -172,6 +172,70 @@ class PluginReporter
             'wordpress_version' => get_bloginfo('version'),
             'php_version' => PHP_VERSION,
             'plugins' => $data,
+            'wordfence' => $this->collectWordfenceData($plugins, $active),
+        ];
+    }
+
+    private function collectWordfenceData(array $plugins, array $active): ?array
+    {
+        global $wpdb;
+
+        $wfls_file = null;
+        foreach (array_keys($plugins) as $plugin_file) {
+            $slug = dirname($plugin_file);
+            if ($slug === 'wordfence-login-security' || $slug === 'wordfence') {
+                $wfls_file = $plugin_file;
+                if ($slug === 'wordfence-login-security') {
+                    break;
+                }
+            }
+        }
+
+        if ($wfls_file === null) {
+            return null;
+        }
+
+        $is_active = in_array($wfls_file, $active, true);
+
+        $table = $wpdb->prefix . 'wfls_2fa_secrets';
+        $table_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) === $table;
+
+        if (!$table_exists) {
+            return [
+                'installed' => true,
+                'active' => $is_active,
+                'table_exists' => false,
+            ];
+        }
+
+        $user_ids_with_2fa = array_map('intval', $wpdb->get_col("SELECT user_id FROM $table"));
+
+        $users = get_users([
+            'capability' => 'edit_posts',
+            'fields' => ['ID'],
+        ]);
+
+        $without_2fa_by_role = [];
+        foreach ($users as $user) {
+            if (in_array((int) $user->ID, $user_ids_with_2fa, true)) {
+                continue;
+            }
+            $wp_user = get_userdata($user->ID);
+            $roles = $wp_user ? (array) $wp_user->roles : ['none'];
+            if (empty($roles)) {
+                $roles = ['none'];
+            }
+            foreach ($roles as $role) {
+                $without_2fa_by_role[$role] = ($without_2fa_by_role[$role] ?? 0) + 1;
+            }
+        }
+
+        return [
+            'installed' => true,
+            'active' => $is_active,
+            'table_exists' => true,
+            'eligible_user_count' => count($users),
+            'users_without_2fa_by_role' => $without_2fa_by_role,
         ];
     }
 
