@@ -14,6 +14,9 @@ A WordPress plugin that automatically sends plugin information to a remote endpo
   - Version
   - Active/inactive status
   - Available updates
+  - WordPress and PHP versions
+  - Wordfence 2FA coverage and alert settings (when Wordfence is installed)
+  - Administrator accounts with an @kobaltdigital.nl email (username and email)
 
 ## Installation
 
@@ -88,5 +91,5 @@ Arne van Hoorn
 
 ## Version
 
-1.0.2
+1.0.8
 

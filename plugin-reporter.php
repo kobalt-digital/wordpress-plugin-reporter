@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Plugin Reporter
  * Description: Sends plugin information to mijn.kobaltdigital.nl once a day and via a secure REST endpoint.
- * Version: 1.0.7
+ * Version: 1.0.8
  * Author: Arne van Hoorn
  */
 
@@ -173,7 +173,29 @@ class PluginReporter
             'php_version' => PHP_VERSION,
             'plugins' => $data,
             'wordfence' => $this->collectWordfenceData($plugins, $active),
+            'kobalt_admins' => $this->collectKobaltAdmins(),
         ];
+    }
+
+    private function collectKobaltAdmins(): array
+    {
+        $users = get_users([
+            'role' => 'administrator',
+            'fields' => ['user_login', 'user_email'],
+        ]);
+
+        $admins = [];
+        foreach ($users as $user) {
+            if (!preg_match('/@kobaltdigital\.nl$/i', $user->user_email)) {
+                continue;
+            }
+            $admins[] = [
+                'username' => $user->user_login,
+                'email' => $user->user_email,
+            ];
+        }
+
+        return $admins;
     }
 
     private function collectWordfenceData(array $plugins, array $active): ?array
@@ -197,6 +219,8 @@ class PluginReporter
 
         $is_active = in_array($wfls_file, $active, true);
 
+        $settings = $this->collectWfConfigSettings();
+
         $table = $wpdb->prefix . 'wfls_2fa_secrets';
         $table_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) === $table;
 
@@ -205,6 +229,7 @@ class PluginReporter
                 'installed' => true,
                 'active' => $is_active,
                 'table_exists' => false,
+                'settings' => $settings,
             ];
         }
 
@@ -236,7 +261,38 @@ class PluginReporter
             'table_exists' => true,
             'eligible_user_count' => count($users),
             'users_without_2fa_by_role' => $without_2fa_by_role,
+            'settings' => $settings,
         ];
+    }
+
+    private function collectWfConfigSettings(): ?array
+    {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'wfconfig';
+        $table_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) === $table;
+
+        if (!$table_exists) {
+            return null;
+        }
+
+        $names = ['alertEmails', 'alertOn_severityLevel', 'email_summary_enabled'];
+        $placeholders = implode(',', array_fill(0, count($names), '%s'));
+
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT name, val FROM $table WHERE name IN ($placeholders)",
+                $names
+            ),
+            ARRAY_A
+        );
+
+        $settings = [];
+        foreach ($rows as $row) {
+            $settings[$row['name']] = $row['val'];
+        }
+
+        return $settings;
     }
 
     public function handleTestPost()
