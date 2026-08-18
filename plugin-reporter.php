@@ -276,7 +276,14 @@ class PluginReporter
             return null;
         }
 
-        $names = ['alertEmails', 'alertOn_severityLevel', 'email_summary_enabled'];
+        $names = [
+            'alertEmails',
+            'alertOn_severityLevel',
+            'email_summary_enabled',
+            'alertOn_wafDeactivated',
+            'alertOn_wordfenceDeactivated',
+            'wafAlertOnAttacks',
+        ];
         $placeholders = implode(',', array_fill(0, count($names), '%s'));
 
         $rows = $wpdb->get_results(
