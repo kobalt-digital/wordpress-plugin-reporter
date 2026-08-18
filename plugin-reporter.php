@@ -276,14 +276,15 @@ class PluginReporter
             return null;
         }
 
-        $names = [
-            'alertEmails',
+        // Flag fields default to 0 when the row is missing or the value is empty.
+        $flag_fields = [
             'alertOn_severityLevel',
             'email_summary_enabled',
             'alertOn_wafDeactivated',
             'alertOn_wordfenceDeactivated',
             'wafAlertOnAttacks',
         ];
+        $names = array_merge(['alertEmails'], $flag_fields);
         $placeholders = implode(',', array_fill(0, count($names), '%s'));
 
         $rows = $wpdb->get_results(
@@ -294,9 +295,22 @@ class PluginReporter
             ARRAY_A
         );
 
-        $settings = [];
+        $vals = [];
         foreach ($rows as $row) {
-            $settings[$row['name']] = $row['val'];
+            $vals[$row['name']] = $row['val'];
+        }
+
+        $settings = [];
+
+        // alertEmails: raw string when present, key omitted otherwise.
+        if (isset($vals['alertEmails'])) {
+            $settings['alertEmails'] = $vals['alertEmails'];
+        }
+
+        // Flag fields: always present, 0 when missing or empty.
+        foreach ($flag_fields as $field) {
+            $val = $vals[$field] ?? '';
+            $settings[$field] = ($val === '' || $val === null) ? 0 : $val;
         }
 
         return $settings;
