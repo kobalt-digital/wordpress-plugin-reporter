@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Plugin Reporter
  * Description: Sends plugin information to mijn.kobaltdigital.nl once a day and via a secure REST endpoint.
- * Version: 1.0.8
+ * Version: 1.0.9
  * Author: Arne van Hoorn
  */
 
@@ -172,9 +172,27 @@ class PluginReporter
             'wordpress_version' => get_bloginfo('version'),
             'php_version' => PHP_VERSION,
             'plugins' => $data,
+            'themes' => $this->collectThemeData(),
             'wordfence' => $this->collectWordfenceData($plugins, $active),
             'kobalt_admins' => $this->collectKobaltAdmins(),
         ];
+    }
+
+    private function collectThemeData(): array
+    {
+        $active_stylesheet = get_stylesheet();
+
+        $themes = [];
+        foreach (wp_get_themes() as $stylesheet => $theme) {
+            $themes[] = [
+                'slug' => $stylesheet,
+                'name' => $theme->get('Name'),
+                'version' => $theme->get('Version'),
+                'active' => $stylesheet === $active_stylesheet ? 1 : 0,
+            ];
+        }
+
+        return $themes;
     }
 
     private function collectKobaltAdmins(): array
