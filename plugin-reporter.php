@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Plugin Reporter
  * Description: Sends plugin information to mijn.kobaltdigital.nl once a day and via a secure REST endpoint.
- * Version: 1.0.9
+ * Version: 1.0.10
  * Author: Arne van Hoorn
  */
 
@@ -181,6 +181,7 @@ class PluginReporter
     private function collectThemeData(): array
     {
         $active_stylesheet = get_stylesheet();
+        $updates = get_site_transient('update_themes');
 
         $themes = [];
         foreach (wp_get_themes() as $stylesheet => $theme) {
@@ -189,6 +190,9 @@ class PluginReporter
                 'name' => $theme->get('Name'),
                 'version' => $theme->get('Version'),
                 'active' => $stylesheet === $active_stylesheet ? 1 : 0,
+                'update' => isset($updates->response[$stylesheet]['new_version'])
+                    ? $updates->response[$stylesheet]['new_version']
+                    : false,
             ];
         }
 
