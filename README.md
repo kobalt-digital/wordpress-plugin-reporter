@@ -76,6 +76,15 @@ The plugin sends the following data structure:
       "status": "active",
       "update": false
     }
+  ],
+  "themes": [
+    {
+      "slug": "theme-name",
+      "name": "Theme Name",
+      "version": "1.0.0",
+      "active": 1,
+      "update": false
+    }
   ]
 }
 ```
@@ -91,5 +100,5 @@ Arne van Hoorn
 
 ## Version
 
-1.0.8
+1.0.9
 
