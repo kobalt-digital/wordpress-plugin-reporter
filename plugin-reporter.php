@@ -39,6 +39,7 @@ class PluginReporter
         add_action('admin_menu', [$this, 'maybeHideAdminMenus'], 999);
         add_action('admin_init', [$this, 'registerSettings']);
         add_action('admin_init', [$this, 'handleTestPost']);
+        add_action('admin_init', [$this, 'handleDownloadPlugins']);
         add_action('admin_init', [$this, 'maybeBlockAdminPages']);
         add_action('admin_init', [$this, 'registerColorSchemes']);
         add_filter('get_user_option_admin_color', [$this, 'enforceAdminColorScheme']);
@@ -390,6 +391,86 @@ class PluginReporter
         exit;
     }
 
+    public function handleDownloadPlugins()
+    {
+        if (!isset($_POST['plugin_reporter_download']) || !check_admin_referer('plugin_reporter_download', 'plugin_reporter_download_nonce')) {
+            return;
+        }
+
+        if (!current_user_can('manage_options')) {
+            wp_die('Unauthorized');
+        }
+
+        if (!class_exists('ZipArchive')) {
+            $this->redirectWithDownloadError('The PHP ZipArchive extension is not available on this server.');
+        }
+
+        @set_time_limit(0);
+
+        $plugin_dir = untrailingslashit(WP_PLUGIN_DIR);
+        $filename = sanitize_file_name(parse_url(home_url(), PHP_URL_HOST) . '-plugins-' . gmdate('Ymd-His') . '.zip');
+        $zip_path = trailingslashit(get_temp_dir()) . $filename;
+
+        $zip = new ZipArchive();
+        if ($zip->open($zip_path, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+            $this->redirectWithDownloadError('Could not create a zip file in ' . get_temp_dir());
+        }
+
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($plugin_dir, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::SELF_FIRST
+        );
+
+        foreach ($iterator as $item) {
+            $relative = ltrim(substr($item->getPathname(), strlen($plugin_dir)), '/\\');
+            $relative = str_replace('\\', '/', $relative);
+
+            if ($item->isDir()) {
+                $zip->addEmptyDir($relative);
+                continue;
+            }
+
+            $zip->addFile($item->getPathname(), $relative);
+        }
+
+        $zip->close();
+
+        if (!file_exists($zip_path)) {
+            $this->redirectWithDownloadError('Zip file was not written.');
+        }
+
+        // Make sure the temp file is removed even if the client aborts mid-download.
+        register_shutdown_function(function () use ($zip_path) {
+            if (file_exists($zip_path)) {
+                @unlink($zip_path);
+            }
+        });
+
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+
+        nocache_headers();
+        header('Content-Type: application/zip');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Content-Length: ' . filesize($zip_path));
+
+        readfile($zip_path);
+        @unlink($zip_path);
+        exit;
+    }
+
+    private function redirectWithDownloadError(string $message): void
+    {
+        set_transient('plugin_reporter_test_message', [
+            'message' => 'Download failed: ' . $message,
+            'type' => 'error',
+        ], 30);
+
+        wp_safe_redirect(admin_url('options-general.php?page=plugin-reporter'));
+        exit;
+    }
+
     public function renderSettingsPage()
     {
         // Display test message if available
@@ -525,6 +606,22 @@ class PluginReporter
                             name="plugin_reporter_test"
                             class="button button-primary"
                             value="Run Test Post" />
+                    </p>
+                </form>
+            </div>
+
+            <div class="card" style="margin-top: 20px;">
+                <h2>Download All Plugins</h2>
+                <p>Creates a zip archive of the entire <code>wp-content/plugins</code> directory, downloads it, and removes the archive from the server afterwards.</p>
+
+                <form method="post" action="">
+                    <?php wp_nonce_field('plugin_reporter_download', 'plugin_reporter_download_nonce'); ?>
+                    <p>
+                        <input
+                            type="submit"
+                            name="plugin_reporter_download"
+                            class="button button-secondary"
+                            value="Download All Plugins" />
                     </p>
                 </form>
             </div>
