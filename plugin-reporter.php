@@ -35,7 +35,7 @@ class PluginReporter
      * Output of `php artisan reporter:generate-signing-key --show-public`.
      * Overridable with PLUGIN_REPORTER_COMMAND_PUBLIC_KEY in wp-config.php.
      */
-    const COMMAND_PUBLIC_KEY = '';
+    const COMMAND_PUBLIC_KEY = 'ozsBwnV6HES3sfxG/A08i2wKX6+r+FmhdpOD3Vvt+b0=';
 
     const SIGNATURE_VERSION = 'plugin-reporter-v1';
 
