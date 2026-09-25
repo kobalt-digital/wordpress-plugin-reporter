@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Plugin Reporter
  * Description: Sends plugin information to mijn.kobaltdigital.nl once a day and via a secure REST endpoint.
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: Arne van Hoorn
  */
 
@@ -29,6 +29,19 @@ function plugin_reporter_deactivate() {
 class PluginReporter
 {
     private $default_endpoint = 'https://plugin-reporter.kobaltdigital.nl/api/data';
+
+    /**
+     * Base64 Ed25519 public key of the app, used to verify signed commands.
+     * Output of `php artisan reporter:generate-signing-key --show-public`.
+     * Overridable with PLUGIN_REPORTER_COMMAND_PUBLIC_KEY in wp-config.php.
+     */
+    const COMMAND_PUBLIC_KEY = '';
+
+    const SIGNATURE_VERSION = 'plugin-reporter-v1';
+
+    const SIGNATURE_MAX_AGE = 300;
+
+    const NONCE_TTL = 600;
 
     public function __construct()
     {
@@ -64,6 +77,12 @@ class PluginReporter
                 'methods'  => 'GET',
                 'callback' => [$this, 'statusCheck'],
                 'permission_callback' => $permission,
+            ]);
+
+            register_rest_route('plugin-reporter/v1', '/update-plugin', [
+                'methods'  => 'POST',
+                'callback' => [$this, 'updatePlugin'],
+                'permission_callback' => [$this, 'verifySignedCommand'],
             ]);
         });
     }
@@ -361,7 +380,7 @@ class PluginReporter
             ],
             'body' => wp_json_encode($payload),
             'timeout' => 20,
-            'sslverify' => false,
+            'sslverify' => true,
         ]);
 
         $status_code = wp_remote_retrieve_response_code($response);
@@ -775,7 +794,7 @@ class PluginReporter
             ],
             'body'    => wp_json_encode($payload),
             'timeout' => 20,
-            'sslverify' => false,
+            'sslverify' => true,
         ]);
 
         return [
@@ -799,6 +818,201 @@ class PluginReporter
             'version' => $plugin_data['Version'] ?? '',
             'site_url' => site_url(),
             'checked_at' => current_time('mysql'),
+        ];
+    }
+
+    /**
+     * Permission callback for commands that change the site. Requires the site key, an
+     * Ed25519 signature from the app and an unused nonce. Never reveals which check failed.
+     */
+    public function verifySignedCommand(WP_REST_Request $request)
+    {
+        $denied = new WP_Error('rest_forbidden', 'Forbidden.', ['status' => 403]);
+
+        if (!$this->isRemoteAddrAllowed()) {
+            return $denied;
+        }
+
+        $key = (string) $request->get_header('X-Reporter-Key');
+        $secret = $this->getSecret();
+        if ($key === '' || $secret === '' || !hash_equals($secret, $key)) {
+            return $denied;
+        }
+
+        $publicKey = $this->getCommandPublicKey();
+        if ($publicKey === null) {
+            return $denied;
+        }
+
+        $timestamp = (string) $request->get_header('X-Reporter-Timestamp');
+        $nonce = (string) $request->get_header('X-Reporter-Nonce');
+        $signature = base64_decode((string) $request->get_header('X-Reporter-Signature'), true);
+
+        if (!ctype_digit($timestamp) || abs(time() - (int) $timestamp) > self::SIGNATURE_MAX_AGE) {
+            return $denied;
+        }
+
+        if (!preg_match('/^[A-Za-z0-9]{32}$/', $nonce) || $signature === false) {
+            return $denied;
+        }
+
+        $message = implode("\n", [
+            self::SIGNATURE_VERSION,
+            strtoupper($request->get_method()),
+            $request->get_route(),
+            $timestamp,
+            $nonce,
+            hash('sha256', $key),
+            hash('sha256', $request->get_body()),
+        ]);
+
+        try {
+            $valid = sodium_crypto_sign_verify_detached($signature, $message, $publicKey);
+        } catch (Throwable $e) {
+            $valid = false;
+        }
+
+        if (!$valid) {
+            return $denied;
+        }
+
+        $nonceKey = 'plugin_reporter_nonce_' . $nonce;
+        if (get_transient($nonceKey) !== false) {
+            return $denied;
+        }
+        set_transient($nonceKey, 1, self::NONCE_TTL);
+
+        return true;
+    }
+
+    /**
+     * Decoded app public key, or null when none is configured or it is invalid.
+     */
+    private function getCommandPublicKey(): ?string
+    {
+        $encoded = defined('PLUGIN_REPORTER_COMMAND_PUBLIC_KEY')
+            ? (string) PLUGIN_REPORTER_COMMAND_PUBLIC_KEY
+            : self::COMMAND_PUBLIC_KEY;
+
+        if ($encoded === '' || !function_exists('sodium_crypto_sign_verify_detached')) {
+            return null;
+        }
+
+        $decoded = base64_decode($encoded, true);
+
+        return $decoded !== false && strlen($decoded) === 32 ? $decoded : null;
+    }
+
+    /**
+     * Optional IP allowlist via PLUGIN_REPORTER_ALLOWED_IPS. Only REMOTE_ADDR is trusted,
+     * forwarded headers can be spoofed.
+     */
+    private function isRemoteAddrAllowed(): bool
+    {
+        if (!defined('PLUGIN_REPORTER_ALLOWED_IPS')) {
+            return true;
+        }
+
+        $allowed = array_filter(array_map('trim', explode(',', (string) PLUGIN_REPORTER_ALLOWED_IPS)));
+        $remote = $_SERVER['REMOTE_ADDR'] ?? '';
+
+        return $remote !== '' && in_array($remote, $allowed, true);
+    }
+
+    /**
+     * REST callback for /update-plugin: updates an installed plugin to the version offered
+     * in the update_plugins transient.
+     */
+    public function updatePlugin(WP_REST_Request $request)
+    {
+        @set_time_limit(300);
+        ignore_user_abort(true);
+
+        $params = $request->get_json_params();
+        $slug = is_array($params) ? ($params['plugin'] ?? null) : null;
+
+        if (!is_string($slug) || !preg_match('/^[a-z0-9][a-z0-9._-]*$/', $slug)) {
+            return new WP_Error('invalid_plugin', 'Invalid plugin slug.', ['status' => 400]);
+        }
+
+        require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        require_once ABSPATH . 'wp-admin/includes/file.php';
+        require_once ABSPATH . 'wp-admin/includes/misc.php';
+        require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+
+        $plugins = get_plugins();
+        $file = null;
+        foreach (array_keys($plugins) as $plugin_file) {
+            if (dirname($plugin_file) === $slug) {
+                $file = $plugin_file;
+                break;
+            }
+        }
+
+        if ($file === null) {
+            return new WP_Error('plugin_not_installed', 'Plugin is not installed.', ['status' => 404]);
+        }
+
+        $old = $plugins[$file]['Version'];
+        $wasActive = is_plugin_active($file);
+
+        wp_clean_plugins_cache();
+        wp_update_plugins();
+        $updates = get_site_transient('update_plugins');
+        $update = $updates->response[$file] ?? null;
+
+        if (!$update) {
+            return [
+                'updated' => false,
+                'plugin' => $slug,
+                'old_version' => $old,
+                'new_version' => $old,
+                'message' => 'No update available.',
+            ];
+        }
+
+        if (get_filesystem_method() !== 'direct') {
+            return new WP_Error('filesystem_not_direct', 'Filesystem access is not direct, updates need credentials.', ['status' => 500]);
+        }
+
+        $skin = new WP_Ajax_Upgrader_Skin();
+        $upgrader = new Plugin_Upgrader($skin);
+        $result = $upgrader->bulk_upgrade([$file]);
+
+        $failed = !$result
+            || is_wp_error($result)
+            || empty($result[$file])
+            || is_wp_error($result[$file])
+            || $skin->get_errors()->has_errors();
+
+        if ($failed) {
+            $message = $skin->get_error_messages();
+            if ($message === '' && is_wp_error($result)) {
+                $message = $result->get_error_message();
+            } elseif ($message === '' && is_array($result) && is_wp_error($result[$file] ?? null)) {
+                $message = $result[$file]->get_error_message();
+            }
+
+            return new WP_Error('update_failed', $message !== '' ? $message : 'Plugin update failed.', ['status' => 500]);
+        }
+
+        if ($wasActive && !is_plugin_active($file)) {
+            activate_plugin($file, '', is_plugin_active_for_network($file), true);
+        }
+
+        wp_clean_plugins_cache();
+        $new = get_plugin_data(WP_PLUGIN_DIR . '/' . $file, false, false)['Version'];
+
+        // The upgrader cleared the update_plugins transient; refill it so the report
+        // does not show every other plugin as up to date.
+        wp_update_plugins();
+        $this->sendPluginInformation();
+
+        return [
+            'updated' => true,
+            'plugin' => $slug,
+            'old_version' => $old,
+            'new_version' => $new,
         ];
     }
 }

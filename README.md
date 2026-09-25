@@ -61,6 +61,21 @@ The endpoint returns plugin information in JSON format:
 }
 ```
 
+### Remote Plugin Updates
+
+The app can update an installed plugin with a POST to `/wp-json/plugin-reporter/v1/update-plugin` and body `{"plugin": "<slug>"}`. Besides `X-Reporter-Key`, every request must carry an Ed25519 signature from the app (`X-Reporter-Timestamp`, `X-Reporter-Nonce`, `X-Reporter-Signature`). Requests older than 5 minutes and reused nonces are rejected.
+
+Configure in `wp-config.php`:
+```php
+// Public key from `php artisan reporter:generate-signing-key --show-public`. Without a valid key every command is rejected.
+define('PLUGIN_REPORTER_COMMAND_PUBLIC_KEY', 'base64-public-key');
+
+// Optional: only accept commands from these REMOTE_ADDR values. Leave unset behind a proxy or CDN.
+define('PLUGIN_REPORTER_ALLOWED_IPS', '203.0.113.10,203.0.113.11');
+```
+
+Only plugins that are already installed and have an update offered by WordPress can be updated. Requires direct filesystem access.
+
 ## Data Format
 
 The plugin sends the following data structure:
@@ -100,5 +115,5 @@ Arne van Hoorn
 
 ## Version
 
-1.1.0
+1.2.0
 
